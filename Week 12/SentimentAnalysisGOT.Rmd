@@ -1,0 +1,178 @@
+---
+title: "Sentiment Analysis of Game of Thrones"
+author: "Astrid Hannestad"
+date: "2025-03-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup and opening libraries
+
+```{r opening library}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+
+library(tidyverse)
+library(here)
+
+# For text mining:
+library(pdftools)
+library(tidytext)
+library(textdata) 
+library(ggwordcloud)
+
+```
+
+## Data wrangeling
+
+```{r loading data}
+GOT_path <- here("data","got.pdf")
+GOT_path
+GOT_text <- pdf_text(GOT_path)
+```
+
+
+
+```{r splitting the text}
+GOT_df <- data.frame(GOT_text) %>% 
+  mutate(text_full = str_split(GOT_text, pattern = '\n')) %>% 
+  unnest(text_full) %>% 
+  mutate(text_full = str_trim(text_full)) 
+
+GOT_tokens <- GOT_df %>% 
+  unnest_tokens(word, text_full)
+GOT_tokens
+
+GOT_wc <- GOT_tokens %>% 
+  count(word) %>% 
+  arrange(-n)
+GOT_wc
+```
+
+```{r creating a stopword list}
+tibble(stop_words)
+
+custom_stopwords <- c("don't", "i'm")
+
+combined_stopwords <- bind_rows(stop_words,
+                                data_frame(word = custom_stopwords,
+                                           lexicon = "custom"))
+
+GOT_stop <- GOT_tokens %>%
+  anti_join(combined_stopwords, by = "word") %>%
+  select(-GOT_text)
+```
+
+```{r filtering numbers}
+GOT_no_numeric <- GOT_stop %>% 
+  filter(is.na(as.numeric(word)))
+```
+
+## Finding the top 100 words
+
+
+```{r top 100 words}
+GOT_top100 <- GOT_no_numeric %>% 
+  count(word) %>% 
+  arrange(-n) %>% 
+  head(100)
+GOT_top100
+```
+
+## Plotting the findings
+
+```{r creating a wordcloud}
+ggplot(data = GOT_top100, aes(label = word, size = n)) +
+  geom_text_wordcloud_area(aes(color = n), shape = "diamond") +
+  scale_size_area(max_size = 12) +
+  scale_color_gradientn(colors = c("lightgreen","blue","red")) +
+  theme_minimal()
+```
+## Applying sentiments to the text
+
+```{r sentiment analysis}
+get_sentiments(lexicon = "afinn")
+
+get_sentiments(lexicon = "bing")
+
+get_sentiments(lexicon = "nrc")
+```
+```{r}
+GOT_afinn <- GOT_stop %>% 
+  inner_join(get_sentiments("afinn"))
+GOT_afinn
+```
+
+```{r mean and median sentiment}
+GOT_summary <- GOT_afinn %>% 
+  summarize(
+    mean_score = mean(value),
+    median_score = median(value)
+  )
+GOT_summary
+```
+
+## Plotting the sentiments
+
+```{r plotting the sentiments}
+GOT_nrc <- GOT_stop %>% 
+  inner_join(get_sentiments("nrc"))
+```
+```{r}
+GOT_nrc_n <- GOT_nrc %>% 
+  count(sentiment, sort = TRUE)
+
+
+ggplot(data = GOT_nrc_n, aes(x = sentiment, y = n)) +
+  geom_col(aes(fill = sentiment))+
+  theme_bw()
+```
+```{r plotting sentiment values todays visual}
+GOT_afinn_hist <- GOT_afinn %>% 
+  count(value)
+
+GOT_sent_values <- ggplot(data = GOT_afinn_hist, aes(x = value, y = n)) +
+  geom_col(aes(fill = value)) +
+  theme_bw() +
+  labs(x= "sentiment value", y = "number of appearences")
+
+GOT_sent_values
+
+ggsave(plot = GOT_sent_values, 
+       here("figures","GOT_sent_values.png"), 
+       height = 4, 
+       width = 5)
+
+```
+
+
+
+
+
+```{r plotting different sentiments}
+GOT_nrc_n5 <- GOT_nrc %>% 
+  count(word,sentiment, sort = TRUE) %>% 
+  group_by(sentiment) %>% 
+  top_n(5) %>% 
+  ungroup()
+
+GOT_nrc_gg <- ggplot(data = GOT_nrc_n5, aes(x = reorder(word,n), y = n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, ncol = 2, scales = "free") +
+  coord_flip() +
+  theme_minimal() +
+  labs(x = "Word", y = "count")
+
+GOT_nrc_gg
+
+ggsave(plot = GOT_nrc_gg, 
+       here("figures","GOT_nrc_sentiment.png"), 
+       height = 8, 
+       width = 5)
+```
+
+
